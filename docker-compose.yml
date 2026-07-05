@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: zhimai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zhimai
+      POSTGRES_PASSWORD: zhimai_dev_password
+      POSTGRES_DB: zhimai
+    ports:
+      - "5432:5432"
+    volumes:
+      - zhimai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zhimai -d zhimai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: zhimai-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - zhimai_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  zhimai_postgres_data:
+  zhimai_redis_data:

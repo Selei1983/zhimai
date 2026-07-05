@@ -1,0 +1,7 @@
+.npm-cache/
+.cache/
+.env
+apps/web/.env
+apps/web/node_modules/
+apps/web/.next/
+/.zhimai-git/

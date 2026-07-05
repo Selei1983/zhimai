@@ -1,0 +1,38 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint",
+    "db:validate": "XDG_CACHE_HOME=../../.cache prisma validate --schema prisma/schema.prisma",
+    "db:generate": "XDG_CACHE_HOME=../../.cache prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "XDG_CACHE_HOME=../../.cache prisma migrate dev --schema prisma/schema.prisma",
+    "db:push": "XDG_CACHE_HOME=../../.cache prisma db push --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@insforge/sdk": "^1.4.3",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "next": "16.2.10",
+    "pg": "^8.22.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "prisma": "^7.8.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.0",
+    "typescript": "^5"
+  }
+}

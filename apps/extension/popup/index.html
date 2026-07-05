@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>知脉</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="logo">知</div>
+        <div>
+          <h1>保存到知脉</h1>
+          <p id="page-url">读取当前网页中</p>
+        </div>
+      </header>
+
+      <section>
+        <label for="page-title">标题</label>
+        <input id="page-title" type="text" />
+      </section>
+
+      <section>
+        <label for="selected-text">选中文本</label>
+        <textarea id="selected-text" placeholder="没有选中文本时，会保存当前网页。"></textarea>
+      </section>
+
+      <section>
+        <label for="note">备注</label>
+        <textarea id="note" placeholder="写一句你为什么想保存它。"></textarea>
+      </section>
+
+      <details>
+        <summary>连接设置</summary>
+        <section>
+          <label for="api-base-url">Web 地址</label>
+          <input id="api-base-url" type="text" />
+        </section>
+        <section>
+          <label for="access-token">访问令牌</label>
+          <input id="access-token" autocomplete="off" type="password" />
+        </section>
+      </details>
+
+      <footer>
+        <button id="open-web" type="button">打开知脉</button>
+        <button id="save" type="button">保存</button>
+      </footer>
+
+      <p id="status" aria-live="polite"></p>
+    </main>
+    <script src="./popup.js"></script>
+  </body>
+</html>

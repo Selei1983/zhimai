@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>知脉 Web Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="sidebar-top">
+          <button class="brand workspace-switcher" aria-label="切换空间">
+            <div class="brand-mark">知</div>
+            <div>
+              <div class="brand-name">知脉</div>
+            </div>
+            <span class="workspace-caret">⌄</span>
+          </button>
+          <div class="sidebar-top-actions">
+            <button class="plain-icon" title="通知" aria-label="通知">◖</button>
+            <button class="avatar-button" title="个人设置" aria-label="个人设置">我</button>
+          </div>
+        </div>
+
+        <div class="sidebar-search-row">
+          <button class="sidebar-search" aria-label="搜索">
+            <span>⌕</span>
+            <span>搜索</span>
+            <kbd>⌘ J</kbd>
+          </button>
+          <button class="sidebar-create" title="新建" aria-label="新建">＋</button>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-view="workspace">
+            <span class="nav-icon">●</span>
+            <span>工作台</span>
+          </button>
+          <button class="nav-item" data-view="inbox">
+            <span class="nav-icon">✎</span>
+            <span>收集箱</span>
+          </button>
+          <button class="nav-item" data-view="wiki">
+            <span class="nav-icon">☆</span>
+            <span>收藏</span>
+          </button>
+          <button class="nav-item" data-view="graph">
+            <span class="nav-icon">⌘</span>
+            <span>脉图</span>
+            <span class="nav-dot"></span>
+          </button>
+          <button class="nav-item" data-view="extension">
+            <span class="nav-icon">↗</span>
+            <span>插件</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-section">
+          <button class="section-toggle">
+            <span>⌄</span>
+            <strong>知识库</strong>
+            <span>›</span>
+          </button>
+          <div class="tree-space expanded">
+            <button class="space-item nav-item tree-space-head" data-view="wiki" data-tree-toggle="personal">
+              <span class="space-icon blue">▤</span>
+              <span>个人 Wiki</span>
+              <span class="tree-caret">⌄</span>
+            </button>
+            <div class="tree-children" data-tree-panel="personal">
+              <button class="tree-folder expanded" data-tree-toggle="personal-knowledge">
+                <span>⌄</span>
+                <strong>知识管理</strong>
+              </button>
+              <div class="tree-docs" data-tree-panel="personal-knowledge">
+                <button class="tree-doc active" data-view="wiki" data-page-index="0">
+                  <span>▤</span>
+                  <span>知识管理的核心是重构认知结构</span>
+                </button>
+              </div>
+              <button class="tree-folder" data-tree-toggle="personal-methods">
+                <span>›</span>
+                <strong>方法沉淀</strong>
+              </button>
+              <div class="tree-docs collapsed" data-tree-panel="personal-methods">
+                <button class="tree-doc" data-view="wiki" data-page-index="3">
+                  <span>▤</span>
+                  <span>收集箱状态设计</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tree-space expanded">
+            <button class="space-item nav-item tree-space-head" data-view="wiki" data-tree-toggle="product">
+              <span class="space-icon teal">▥</span>
+              <span>知脉产品设计</span>
+              <span class="space-count" id="wikiCount">12</span>
+            </button>
+            <div class="tree-children" data-tree-panel="product">
+              <button class="tree-folder expanded" data-tree-toggle="product-design">
+                <span>⌄</span>
+                <strong>产品方案</strong>
+              </button>
+              <div class="tree-docs" data-tree-panel="product-design" id="treeDocuments"></div>
+              <button class="tree-folder" data-tree-toggle="product-extension">
+                <span>›</span>
+                <strong>浏览器插件</strong>
+              </button>
+              <div class="tree-docs collapsed" data-tree-panel="product-extension">
+                <button class="tree-doc" data-view="wiki" data-page-index="2">
+                  <span>▤</span>
+                  <span>浏览器插件的边界</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tree-space">
+            <button class="space-item nav-item tree-space-head" data-view="wiki" data-tree-toggle="ai">
+              <span class="space-icon amber">▧</span>
+              <span>AI 资料库</span>
+              <span class="tree-caret">›</span>
+            </button>
+            <div class="tree-children collapsed" data-tree-panel="ai">
+              <button class="tree-doc" data-view="wiki" data-page-index="4">
+                <span>▤</span>
+                <span>如何避免重复创建页面</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="tree-space">
+            <button class="space-item nav-item tree-space-head" data-view="wiki" data-tree-toggle="templates">
+              <span class="space-icon plum">▦</span>
+              <span>方法与模板</span>
+              <span class="tree-caret">›</span>
+            </button>
+            <div class="tree-children collapsed" data-tree-panel="templates">
+              <button class="tree-doc" data-view="wiki" data-page-index="5">
+                <span>▤</span>
+                <span>Wiki 页面模板</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <span>待整理</span>
+          <strong id="pendingCount">3</strong>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="viewTitle">工作台</h1>
+            <p id="viewSubtitle">把碎片内容整理成结构化、可关联、可复用的个人 Wiki。</p>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" title="搜索知识库" aria-label="搜索知识库">⌕</button>
+            <button class="icon-button" title="同步插件" aria-label="同步插件">⇄</button>
+            <button class="primary-button" id="quickCaptureBtn">快速收集</button>
+          </div>
+        </header>
+
+        <section class="view active" id="workspaceView" aria-label="工作台">
+          <div class="workspace-grid">
+            <section class="capture-band">
+              <div class="section-heading">
+                <div>
+                  <h2>快速输入</h2>
+                  <p>粘贴一段想法、文章摘录、网页片段或工作观察。</p>
+                </div>
+                <span class="status-pill">默认进入待确认</span>
+              </div>
+              <textarea id="captureInput" placeholder="例如：未来的知识管理不是保存信息，而是持续重构认知结构。"></textarea>
+              <div class="capture-actions">
+                <div class="source-switch" aria-label="内容来源">
+                  <button class="active">文字</button>
+                  <button>链接</button>
+                  <button>摘录</button>
+                </div>
+                <button class="primary-button" id="processInputBtn">AI 整理</button>
+              </div>
+            </section>
+
+            <section class="queue-panel">
+              <div class="section-heading compact">
+                <h2>待整理</h2>
+                <button class="text-button">按价值排序</button>
+              </div>
+              <div class="capture-list" id="captureList"></div>
+            </section>
+
+            <section class="analysis-panel">
+              <div class="section-heading compact">
+                <h2>AI 判断</h2>
+                <span class="status-pill success" id="analysisStatus">可写入</span>
+              </div>
+              <div class="analysis-stack">
+                <div class="analysis-row">
+                  <span>内容类型</span>
+                  <strong id="analysisType">观点</strong>
+                </div>
+                <div class="analysis-row">
+                  <span>建议动作</span>
+                  <strong id="analysisAction">创建新页面</strong>
+                </div>
+                <div class="analysis-row">
+                  <span>关联页面</span>
+                  <strong id="analysisLinks">3 个</strong>
+                </div>
+              </div>
+              <div class="topic-cloud" id="topicCloud"></div>
+              <div class="insight-box">
+                <div class="panel-label">核心判断</div>
+                <p id="analysisSummary"></p>
+              </div>
+            </section>
+
+            <section class="draft-panel">
+              <div class="section-heading compact">
+                <h2>Wiki 草稿</h2>
+                <div class="draft-actions">
+                  <button class="secondary-button" id="rewriteBtn">重新整理</button>
+                  <button class="primary-button" id="acceptBtn">写入 Wiki</button>
+                </div>
+              </div>
+              <article class="wiki-draft" id="wikiDraft"></article>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="inboxView" aria-label="收集箱">
+          <div class="table-toolbar">
+            <div>
+              <h2>收集箱</h2>
+              <p>来自 Web、浏览器插件和手动输入的所有碎片。</p>
+            </div>
+            <div class="segmented-control">
+              <button class="active">全部</button>
+              <button>未整理</button>
+              <button>待确认</button>
+              <button>已写入</button>
+            </div>
+          </div>
+          <div class="data-table" id="inboxTable"></div>
+        </section>
+
+        <section class="view" id="wikiView" aria-label="知识库">
+          <article class="knowledge-reader">
+            <header class="reader-header">
+              <div>
+                <div class="reader-breadcrumb" id="readerBreadcrumb">个人 Wiki / 知识管理</div>
+                <h2 id="readerTitle">知识管理的核心是重构认知结构</h2>
+                <p id="readerMeta">观点 · 已成文 · 今天 17:42</p>
+              </div>
+              <div class="reader-actions">
+                <button class="secondary-button" id="newDocBtn">新建文档</button>
+                <button class="primary-button">继续补充</button>
+              </div>
+            </header>
+            <div class="reader-tags" id="readerTags"></div>
+            <div class="reader-body" id="readerBody"></div>
+          </article>
+        </section>
+
+        <section class="view" id="graphView" aria-label="脉图">
+          <div class="graph-layout">
+            <section>
+              <div class="table-toolbar">
+                <div>
+                  <h2>脉图</h2>
+                  <p>展示主题、概念和页面之间的关系。</p>
+                </div>
+                <div class="segmented-control">
+                  <button class="active">主题簇</button>
+                  <button>孤立页</button>
+                  <button>近期增长</button>
+                </div>
+              </div>
+              <div class="knowledge-map" aria-label="知识关系图">
+                <div class="map-line l1"></div>
+                <div class="map-line l2"></div>
+                <div class="map-line l3"></div>
+                <div class="map-node root">知脉</div>
+                <div class="map-node n1">个人 Wiki</div>
+                <div class="map-node n2">知识重构</div>
+                <div class="map-node n3">AI 整理台</div>
+                <div class="map-node n4">浏览器插件</div>
+                <div class="map-node n5">来源材料</div>
+              </div>
+            </section>
+            <aside class="graph-inspector">
+              <div class="panel-label">当前主题簇</div>
+              <h2>个人知识系统</h2>
+              <p>这个主题簇连接了收集、整理、Wiki 页面和来源管理，是知脉第一版最重要的产品闭环。</p>
+              <div class="analysis-stack">
+                <div class="analysis-row">
+                  <span>页面</span>
+                  <strong>8</strong>
+                </div>
+                <div class="analysis-row">
+                  <span>来源</span>
+                  <strong>23</strong>
+                </div>
+                <div class="analysis-row">
+                  <span>待研究</span>
+                  <strong>5</strong>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="extensionView" aria-label="浏览器插件">
+          <div class="extension-layout">
+            <section class="extension-copy">
+              <div class="table-toolbar">
+                <div>
+                  <h2>浏览器插件</h2>
+                  <p>插件只做一件事：把网页上的有价值内容快速送回知脉。</p>
+                </div>
+              </div>
+              <div class="feature-grid">
+                <div class="feature-item">
+                  <strong>保存当前网页</strong>
+                  <span>自动带入标题、URL 和来源时间。</span>
+                </div>
+                <div class="feature-item">
+                  <strong>保存选中文本</strong>
+                  <span>把关键段落直接送到收集箱。</span>
+                </div>
+                <div class="feature-item">
+                  <strong>附加个人理解</strong>
+                  <span>保留当下判断，避免只存原文。</span>
+                </div>
+                <div class="feature-item">
+                  <strong>打开整理台</strong>
+                  <span>需要深度处理时直接跳回 Web。</span>
+                </div>
+              </div>
+            </section>
+            <aside class="extension-popup" aria-label="插件弹窗预览">
+              <div class="popup-top">
+                <div class="brand-mark small">知</div>
+                <strong>保存到知脉</strong>
+              </div>
+              <label>当前网页</label>
+              <div class="url-preview">未来知识管理的三个变化</div>
+              <label>选中内容</label>
+              <div class="selection-preview">知识管理的重点不再是存储，而是把信息转化为可复用的认知结构。</div>
+              <label>我的理解</label>
+              <textarea>这可以作为“知识重构”页面的核心观点。</textarea>
+              <button class="primary-button full">发送到收集箱</button>
+              <button class="secondary-button full">发送并打开整理台</button>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">已写入 Wiki</div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

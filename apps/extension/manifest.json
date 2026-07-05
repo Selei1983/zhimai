@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "知脉",
+  "description": "把网页片段保存到知脉收集箱。",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "保存到知脉"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "contextMenus", "scripting", "storage"],
+  "host_permissions": ["http://localhost:3001/*", "http://localhost:3000/*"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

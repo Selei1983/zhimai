@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String      @id @default(cuid())
+  email     String      @unique
+  name      String?
+  avatarUrl String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  workspaces Workspace[]
+}
+
+model Workspace {
+  id        String    @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  libraries Library[]
+  captures  Capture[]
+  pages     WikiPage[]
+  aiConfig  AiProviderConfig?
+}
+
+model Library {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  icon        String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folders     Folder[]
+  pages       WikiPage[]
+}
+
+model Folder {
+  id        String    @id @default(cuid())
+  libraryId String
+  parentId  String?
+  name      String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  library   Library   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  parent    Folder?   @relation("FolderTree", fields: [parentId], references: [id])
+  children  Folder[]  @relation("FolderTree")
+  pages     WikiPage[]
+}
+
+model Capture {
+  id              String             @id @default(cuid())
+  workspaceId     String
+  sourceType      String
+  sourceTitle     String?
+  sourceUrl       String?
+  selectedText    String?
+  rawContent      String
+  note            String?
+  status          String             @default("pending")
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  workspace       Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  processingResults ProcessingResult[]
+  pageSources     PageSource[]
+}
+
+model ProcessingResult {
+  id                String   @id @default(cuid())
+  captureId         String
+  model             String
+  summary           String
+  contentType       String
+  topicsJson        Json
+  suggestedAction   String
+  suggestedTitle    String?
+  keyPointsJson     Json
+  wikiDraftMarkdown String
+  relatedPagesJson  Json
+  qualityNotesJson  Json
+  createdAt         DateTime @default(now())
+  capture           Capture  @relation(fields: [captureId], references: [id], onDelete: Cascade)
+}
+
+model AiProviderConfig {
+  id               String    @id @default(cuid())
+  workspaceId      String    @unique
+  provider         String
+  baseUrl          String
+  model            String
+  apiKeyCiphertext String
+  keyHint          String
+  isEnabled        Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model WikiPage {
+  id              String       @id @default(cuid())
+  workspaceId     String
+  libraryId       String
+  folderId        String?
+  title           String
+  slug            String
+  type            String
+  summary         String?
+  contentMarkdown String
+  status          String       @default("published")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  workspace       Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  library         Library      @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  folder          Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  versions        PageVersion[]
+  sources         PageSource[]
+  outgoingLinks   PageLink[]   @relation("FromPage")
+  incomingLinks   PageLink[]   @relation("ToPage")
+
+  @@unique([libraryId, slug])
+}
+
+model PageVersion {
+  id              String   @id @default(cuid())
+  pageId          String
+  contentMarkdown String
+  changeNote      String?
+  createdAt       DateTime @default(now())
+  page            WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model PageSource {
+  id        String   @id @default(cuid())
+  pageId    String
+  captureId String
+  quote     String?
+  note      String?
+  createdAt DateTime @default(now())
+  page      WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  capture   Capture  @relation(fields: [captureId], references: [id], onDelete: Cascade)
+}
+
+model PageLink {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  fromPageId   String
+  toPageId     String
+  relationType String
+  reason       String?
+  confidence   Float?
+  createdAt    DateTime @default(now())
+  fromPage     WikiPage @relation("FromPage", fields: [fromPageId], references: [id], onDelete: Cascade)
+  toPage       WikiPage @relation("ToPage", fields: [toPageId], references: [id], onDelete: Cascade)
+}
