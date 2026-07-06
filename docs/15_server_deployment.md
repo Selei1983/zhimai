@@ -35,6 +35,8 @@ NEXT_PUBLIC_INSFORGE_ANON_KEY="..."
 AI_CONFIG_SECRET="一段足够长的随机字符串"
 ```
 
+这里不需要配置 OpenAI、Claude 或其他模型 API Key。每个用户的模型 Key 在知脉的「配置」里自行填写，服务端只用 `AI_CONFIG_SECRET` 对这些用户 Key 做加密保存。
+
 `INSFORGE_BASE_URL` 和 `NEXT_PUBLIC_INSFORGE_BASE_URL` 默认指向 `https://api.yuankun.cloud`。
 
 ## 3. 启动
