@@ -43,20 +43,20 @@ AI_CONFIG_SECRET="一段足够长的随机字符串"
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 ```
 
-默认会把应用发布到服务器的 `3001` 端口。
+默认会把应用发布到服务器的 `3010` 端口。
 
 ## 4. 检查
 
 ```bash
 docker ps
 docker logs --tail=100 zhimai-web
-curl http://127.0.0.1:3001
+curl http://127.0.0.1:3010
 ```
 
-如果服务器安全组放行了 `3001`，可以用浏览器访问：
+如果服务器安全组放行了 `3010`，可以用浏览器访问：
 
 ```text
-http://服务器 IP:3001
+http://服务器 IP:3010
 ```
 
 ## 5. 更新
