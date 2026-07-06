@@ -1,0 +1,15 @@
+services:
+  web:
+    container_name: zhimai-web
+    image: zhimai-web:latest
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_INSFORGE_BASE_URL: ${NEXT_PUBLIC_INSFORGE_BASE_URL}
+        NEXT_PUBLIC_INSFORGE_ANON_KEY: ${NEXT_PUBLIC_INSFORGE_ANON_KEY}
+    env_file:
+      - ${ZHIMAI_ENV_FILE:-./.env.production}
+    ports:
+      - "${ZHIMAI_WEB_PORT:-3001}:3000"
