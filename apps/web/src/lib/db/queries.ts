@@ -127,10 +127,10 @@ function captureStatus(status: string): Capture["status"] {
 
 function pendingAction(sourceType: Capture["sourceType"]) {
   const actions: Record<Capture["sourceType"], string> = {
-    text: "结构化整理",
-    web: "解析网页正文",
-    video: "提取转写要点",
-    file: "抽取文件内容",
+    text: "规划归类",
+    web: "解析并归类",
+    video: "转写后归类",
+    file: "抽取后归类",
   };
   return actions[sourceType];
 }

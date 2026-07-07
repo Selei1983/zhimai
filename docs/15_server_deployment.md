@@ -68,3 +68,9 @@ cd /opt/zhimai
 git pull origin main
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 ```
+
+如果更新包含 V2 alpha 知识图谱能力，需要先在 InsForge 数据库执行：
+
+```text
+apps/web/insforge/knowledge-graph-alpha.sql
+```

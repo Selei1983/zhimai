@@ -12,6 +12,7 @@ import {
   updateInsForgeWikiPage,
 } from "@/lib/insforge/actions";
 import { getUserWorkspaceContext } from "@/lib/insforge/workspace";
+import { buildTopicMarkdown, generateAlphaPlanning } from "@/lib/knowledge-graph/alpha";
 import type { Capture, KnowledgeSourceType, WikiPage } from "@/lib/zhimai-data";
 
 export async function saveAiConfig(input: AiProviderInput, accessToken?: string) {
@@ -214,35 +215,172 @@ export async function createWikiPageFromCapture(input: { captureId: string }, ac
     },
   });
 
-  const title = capture.sourceTitle ?? capture.rawContent.slice(0, 24);
-  const contentMarkdown = buildDraftMarkdown({
+  const existingTopics = await prisma.wikiPage.findMany({
+    where: { workspaceId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      summary: true,
+      contentMarkdown: true,
+    },
+  });
+  const planning = await generateAlphaPlanning({
+    existingTopics: existingTopics.map((page) => ({
+      id: page.id,
+      title: page.title,
+      summary: page.summary,
+      content: page.contentMarkdown,
+    })),
     note: capture.note,
     rawContent: capture.rawContent,
     selectedText: capture.selectedText,
+    sourceTitle: capture.sourceTitle,
     sourceType: capture.sourceType,
+    workspaceId,
+  });
+  const targetPage = planning.plan.targetPageId
+    ? existingTopics.find((page) => page.id === planning.plan.targetPageId)
+    : undefined;
+  const shouldUpdate = planning.plan.action === "update_existing_topic" && targetPage;
+  const contentMarkdown = buildTopicMarkdown({
+    atoms: planning.atoms,
+    existingContent: shouldUpdate ? targetPage.contentMarkdown : null,
+    plan: planning.plan,
+    rawContent: capture.rawContent,
+    sourceTitle: capture.sourceTitle,
   });
 
-  const page = await prisma.wikiPage.create({
-    data: {
-      workspaceId,
-      libraryId: library.id,
-      folderId: folder.id,
-      title,
-      slug: `${slugify(title)}-${Date.now()}`,
-      type: "观点",
-      summary: capture.rawContent.slice(0, 120),
-      contentMarkdown,
-      sources: {
-        create: {
-          captureId: capture.id,
-          quote: capture.selectedText ?? capture.rawContent.slice(0, 200),
-          note: "由收集箱生成",
+  const page = shouldUpdate
+    ? await prisma.wikiPage.update({
+        where: {
+          id: targetPage.id,
+          workspaceId,
         },
+        data: {
+          summary: planning.atoms[0]?.content.slice(0, 120) ?? capture.rawContent.slice(0, 120),
+          contentMarkdown,
+          updatedAt: new Date(),
+          sources: {
+            create: {
+              captureId: capture.id,
+              quote: capture.selectedText ?? capture.rawContent.slice(0, 200),
+              note: `V2 alpha：${actionLabel(planning.plan.action)}；${planning.plan.reason}`,
+            },
+          },
+          versions: {
+            create: {
+              contentMarkdown,
+              changeNote: "V2 alpha 更新已有主题",
+            },
+          },
+        },
+        include: {
+          library: true,
+          folder: true,
+        },
+      })
+    : await prisma.wikiPage.create({
+        data: {
+          workspaceId,
+          libraryId: library.id,
+          folderId: folder.id,
+          title: planning.plan.targetTitle,
+          slug: `${slugify(planning.plan.targetTitle)}-${Date.now()}`,
+          type: "观点",
+          summary: planning.atoms[0]?.content.slice(0, 120) ?? capture.rawContent.slice(0, 120),
+          contentMarkdown,
+          sources: {
+            create: {
+              captureId: capture.id,
+              quote: capture.selectedText ?? capture.rawContent.slice(0, 200),
+              note: `V2 alpha：${actionLabel(planning.plan.action)}；${planning.plan.reason}`,
+            },
+          },
+          versions: {
+            create: {
+              contentMarkdown,
+              changeNote: "V2 alpha 新建主题",
+            },
+          },
+        },
+        include: {
+          library: true,
+          folder: true,
+        },
+      });
+
+  const topic = await prisma.topicNode.upsert({
+    where: {
+      workspaceId_slug: {
+        workspaceId,
+        slug: slugify(planning.plan.targetTitle),
       },
     },
-    include: {
-      library: true,
-      folder: true,
+    update: {
+      pageId: page.id,
+      name: planning.plan.targetTitle,
+      summary: planning.plan.reason,
+      level: planning.plan.targetLevel,
+    },
+    create: {
+      workspaceId,
+      pageId: page.id,
+      name: planning.plan.targetTitle,
+      slug: slugify(planning.plan.targetTitle),
+      summary: planning.plan.reason,
+      level: planning.plan.targetLevel,
+    },
+  });
+
+  const atoms = await prisma.knowledgeAtom.createManyAndReturn({
+    data: planning.atoms.map((atom) => ({
+      workspaceId,
+      captureId: capture.id,
+      topicId: topic.id,
+      atomType: atom.type,
+      title: atom.title,
+      content: atom.content,
+      quote: atom.quote,
+      confidence: atom.confidence,
+    })),
+    select: {
+      id: true,
+    },
+  });
+
+  await prisma.categoryPlanningRun.create({
+    data: {
+      workspaceId,
+      captureId: capture.id,
+      topicId: topic.id,
+      action: planning.plan.action,
+      targetTitle: planning.plan.targetTitle,
+      reason: planning.plan.reason,
+      confidence: planning.plan.confidence,
+      atomIdsJson: atoms.map((atom) => atom.id),
+      recommendedActionsJson: {
+        action: planning.plan.action,
+        targetLevel: planning.plan.targetLevel,
+        targetPageId: planning.plan.targetPageId,
+      },
+      status: "confirmed",
+    },
+  });
+
+  await prisma.synthesisRun.create({
+    data: {
+      workspaceId,
+      topicId: topic.id,
+      pageId: page.id,
+      captureId: capture.id,
+      action: planning.plan.action,
+      status: "confirmed",
+      diffJson: {
+        targetTitle: planning.plan.targetTitle,
+        reason: planning.plan.reason,
+        atomCount: planning.atoms.length,
+      },
     },
   });
 
@@ -329,6 +467,20 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 
   return slug || "page";
+}
+
+function actionLabel(action: string) {
+  const labels: Record<string, string> = {
+    update_existing_topic: "更新已有主题",
+    create_new_topic: "新建主题",
+    create_subtopic: "新建子主题",
+    merge_with_topic: "合并主题",
+    split_into_multiple_topics: "拆分主题",
+    append_as_evidence: "作为证据追加",
+    archive_as_source_only: "仅归档来源",
+    hold_for_more_sources: "暂存等待更多材料",
+  };
+  return labels[action] ?? action;
 }
 
 function formatDate(date: Date) {

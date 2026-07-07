@@ -25,6 +25,38 @@ export type Capture = {
   suggestedAction: string;
 };
 
+export type KnowledgeAtom = {
+  id?: string;
+  type: "concept" | "claim" | "method" | "case" | "data_point" | "question" | "definition" | "taxonomy" | "risk" | "decision";
+  title: string;
+  content: string;
+  quote?: string;
+  confidence?: number;
+};
+
+export type CategoryPlan = {
+  action:
+    | "update_existing_topic"
+    | "create_new_topic"
+    | "create_subtopic"
+    | "merge_with_topic"
+    | "split_into_multiple_topics"
+    | "append_as_evidence"
+    | "archive_as_source_only"
+    | "hold_for_more_sources";
+  targetTitle: string;
+  targetPageId?: string;
+  targetTopicId?: string;
+  targetLevel: "domain" | "topic" | "subtopic" | "aspect";
+  reason: string;
+  confidence: number;
+};
+
+export type GraphPlanningSummary = {
+  atoms: KnowledgeAtom[];
+  plan: CategoryPlan;
+};
+
 export type KnowledgeSourceType = "text" | "web" | "video" | "file";
 
 export type AppUser = {

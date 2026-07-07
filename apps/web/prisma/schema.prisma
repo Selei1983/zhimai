@@ -27,6 +27,10 @@ model Workspace {
   captures  Capture[]
   pages     WikiPage[]
   aiConfig  AiProviderConfig?
+  topicNodes TopicNode[]
+  knowledgeAtoms KnowledgeAtom[]
+  categoryPlanningRuns CategoryPlanningRun[]
+  synthesisRuns SynthesisRun[]
 }
 
 model Library {
@@ -72,6 +76,8 @@ model Capture {
   workspace       Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   processingResults ProcessingResult[]
   pageSources     PageSource[]
+  knowledgeAtoms  KnowledgeAtom[]
+  categoryPlanningRuns CategoryPlanningRun[]
 }
 
 model ProcessingResult {
@@ -125,8 +131,84 @@ model WikiPage {
   sources         PageSource[]
   outgoingLinks   PageLink[]   @relation("FromPage")
   incomingLinks   PageLink[]   @relation("ToPage")
+  topicNode       TopicNode?
+  synthesisRuns   SynthesisRun[]
 
   @@unique([libraryId, slug])
+}
+
+model TopicNode {
+  id          String    @id @default(cuid())
+  workspaceId String
+  pageId      String?   @unique
+  name        String
+  slug        String
+  summary     String?
+  level       String    @default("topic")
+  status      String    @default("active")
+  aliasesJson Json      @default("[]")
+  tagsJson    Json      @default("[]")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  page        WikiPage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  atoms       KnowledgeAtom[]
+  planningRuns CategoryPlanningRun[]
+  synthesisRuns SynthesisRun[]
+
+  @@unique([workspaceId, slug])
+}
+
+model KnowledgeAtom {
+  id          String    @id @default(cuid())
+  workspaceId String
+  captureId   String
+  topicId     String?
+  atomType    String
+  title       String
+  content     String
+  quote       String?
+  confidence  Float?
+  metadataJson Json     @default("{}")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  capture     Capture   @relation(fields: [captureId], references: [id], onDelete: Cascade)
+  topic       TopicNode? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+}
+
+model CategoryPlanningRun {
+  id          String    @id @default(cuid())
+  workspaceId String
+  captureId   String
+  topicId     String?
+  action      String
+  targetTitle String
+  reason      String
+  confidence  Float?
+  atomIdsJson Json      @default("[]")
+  recommendedActionsJson Json @default("{}")
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  capture     Capture   @relation(fields: [captureId], references: [id], onDelete: Cascade)
+  topic       TopicNode? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+}
+
+model SynthesisRun {
+  id          String    @id @default(cuid())
+  workspaceId String
+  topicId     String?
+  pageId      String?
+  captureId   String?
+  action      String
+  model       String?
+  status      String    @default("confirmed")
+  diffJson    Json      @default("{}")
+  qualityNotesJson Json @default("[]")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  topic       TopicNode? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  page        WikiPage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
 }
 
 model PageVersion {

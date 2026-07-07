@@ -737,7 +737,7 @@ function InboxView({
               disabled={isSaving || capture.status === "已写入"}
               onClick={() => onCreatePageFromCapture(capture.id)}
             >
-              {capture.status === "已写入" ? "已写入" : "成文"}
+              {capture.status === "已写入" ? "已写入" : "规划写入"}
             </button>
           </div>
         ))}

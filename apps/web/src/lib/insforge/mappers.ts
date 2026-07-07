@@ -65,18 +65,27 @@ export function toCapture(capture: InsForgeCaptureRow): Capture {
     sourceType,
     parser: parserLabel(capture.source_type),
     status: captureStatus(capture.status),
-    suggestedAction: capture.status === "pending" ? pendingAction(sourceType) : "确认写入",
+    suggestedAction: capture.status === "pending" ? pendingAction(sourceType) : confirmedAction(capture.status),
   };
 }
 
 function pendingAction(sourceType: Capture["sourceType"]) {
   const actions: Record<Capture["sourceType"], string> = {
-    text: "结构化整理",
-    web: "解析网页正文",
-    video: "提取转写要点",
-    file: "抽取文件内容",
+    text: "规划归类",
+    web: "解析并归类",
+    video: "转写后归类",
+    file: "抽取后归类",
   };
   return actions[sourceType];
+}
+
+function confirmedAction(status: string) {
+  const actions: Record<string, string> = {
+    processing: "正在规划",
+    processed: "待确认写入",
+    confirmed: "已进入图谱",
+  };
+  return actions[status] ?? "确认写入";
 }
 
 export function toWikiType(type: string): WikiPage["type"] {

@@ -1,5 +1,4 @@
 import { createInsForgeClient } from "@/lib/insforge/client";
-import { generateWikiDraft } from "@/lib/ai/wiki-draft";
 import { normalizeSourceType, parserLabel } from "@/lib/captures/source-types";
 import {
   getInsForgeErrorMessage,
@@ -8,6 +7,8 @@ import {
   toCapture,
   toWikiPage,
 } from "@/lib/insforge/mappers";
+import { buildTopicMarkdown, generateAlphaPlanning, type ExistingTopicCandidate } from "@/lib/knowledge-graph/alpha";
+import type { CategoryPlan, KnowledgeAtom } from "@/lib/zhimai-data";
 
 const pageSelect = "id,title,type,status,updated_at,content_markdown,libraries(name),folders(name)";
 
@@ -25,6 +26,13 @@ type CaptureDetailRow = InsForgeCaptureRow & {
   raw_content: string;
   note: string | null;
   selected_text: string | null;
+};
+
+type ExistingPageRow = {
+  id: string;
+  title: string;
+  summary: string | null;
+  content_markdown: string | null;
 };
 
 export async function createInsForgeWikiPage(input: {
@@ -150,46 +158,82 @@ export async function createInsForgeWikiPageFromCapture(
 
   const library = await ensureLibrary("个人 Wiki", workspaceId, accessToken);
   const folder = await ensureFolder(library, "知识管理", workspaceId, accessToken);
-  const title = capture.source_title ?? capture.raw_content.slice(0, 24);
-  const contentMarkdown =
-    (await generateWikiDraft({
-      accessToken,
-      note: capture.note,
-      rawContent: capture.raw_content,
-      selectedText: capture.selected_text,
-      sourceTitle: capture.source_title,
-      sourceType: capture.source_type,
-      workspaceId,
-    }).catch((error) => {
-      console.warn("AI draft generation failed, falling back to template.", error);
-      return null;
-    })) ?? buildDraftMarkdown(capture);
+  const existingTopics = await listExistingTopics(workspaceId, accessToken);
+  const planning = await generateAlphaPlanning({
+    accessToken,
+    existingTopics,
+    note: capture.note,
+    rawContent: capture.raw_content,
+    selectedText: capture.selected_text,
+    sourceTitle: capture.source_title,
+    sourceType: capture.source_type,
+    workspaceId,
+  });
+  const targetPage = planning.plan.targetPageId
+    ? existingTopics.find((topic) => topic.id === planning.plan.targetPageId)
+    : undefined;
+  const shouldUpdate = planning.plan.action === "update_existing_topic" && targetPage;
+  const contentMarkdown = buildTopicMarkdown({
+    atoms: planning.atoms,
+    existingContent: shouldUpdate ? targetPage.content : null,
+    plan: planning.plan,
+    rawContent: capture.raw_content,
+    sourceTitle: capture.source_title,
+  });
 
-  const pageResult = await client.database
-    .from("wiki_pages")
-    .insert({
-      workspace_id: workspaceId,
-      library_id: library.id,
-      folder_id: folder.id,
-      title,
-      slug: `${slugify(title)}-${Date.now()}`,
-      type: "观点",
-      summary: capture.raw_content.slice(0, 120),
-      content_markdown: contentMarkdown,
-    })
-    .select(pageSelect)
-    .single();
+  const pageResult = shouldUpdate
+    ? await client.database
+        .from("wiki_pages")
+        .update({
+          summary: planning.atoms[0]?.content.slice(0, 120) ?? capture.raw_content.slice(0, 120),
+          content_markdown: contentMarkdown,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetPage.id)
+        .eq("workspace_id", workspaceId)
+        .select(pageSelect)
+        .single()
+    : await client.database
+        .from("wiki_pages")
+        .insert({
+          workspace_id: workspaceId,
+          library_id: library.id,
+          folder_id: folder.id,
+          title: planning.plan.targetTitle,
+          slug: `${slugify(planning.plan.targetTitle)}-${Date.now()}`,
+          type: "观点",
+          summary: planning.atoms[0]?.content.slice(0, 120) ?? capture.raw_content.slice(0, 120),
+          content_markdown: contentMarkdown,
+        })
+        .select(pageSelect)
+        .single();
 
-  assertNoError("从收集箱生成 Wiki 页面失败", pageResult.error);
+  assertNoError(shouldUpdate ? "更新主题页失败" : "从收集箱生成主题页失败", pageResult.error);
   const page = pageResult.data as InsForgePageRow;
 
   const sourceResult = await client.database.from("page_sources").insert({
     page_id: page.id,
     capture_id: capture.id,
     quote: capture.selected_text ?? capture.raw_content.slice(0, 200),
-    note: "由收集箱生成",
+    note: `V2 alpha：${actionLabel(planning.plan.action)}；${planning.plan.reason}`,
   });
   assertNoError("记录页面来源失败", sourceResult.error);
+
+  const versionResult = await client.database.from("page_versions").insert({
+    page_id: page.id,
+    content_markdown: contentMarkdown,
+    change_note: shouldUpdate ? "V2 alpha 更新已有主题" : "V2 alpha 新建主题",
+  });
+  assertNoError("保存主题页版本失败", versionResult.error);
+
+  await recordAlphaGraph({
+    accessToken,
+    atoms: planning.atoms,
+    captureId: capture.id,
+    pageId: page.id,
+    plan: planning.plan,
+    workspaceId,
+  });
 
   const updateCaptureResult = await client.database
     .from("captures")
@@ -208,6 +252,110 @@ export async function createInsForgeWikiPageFromCapture(
     capture: toCapture(updateCaptureResult.data as InsForgeCaptureRow),
     page: toWikiPage(page),
   };
+}
+
+async function listExistingTopics(workspaceId: string, accessToken?: string): Promise<ExistingTopicCandidate[]> {
+  const client = createInsForgeClient(accessToken);
+  const result = await client.database
+    .from("wiki_pages")
+    .select("id,title,summary,content_markdown")
+    .eq("workspace_id", workspaceId)
+    .order("updated_at", { ascending: false })
+    .limit(30);
+
+  assertNoError("读取已有主题失败", result.error);
+  return ((result.data ?? []) as ExistingPageRow[]).map((page) => ({
+    id: page.id,
+    title: page.title,
+    summary: page.summary,
+    content: page.content_markdown,
+  }));
+}
+
+async function recordAlphaGraph(input: {
+  accessToken?: string;
+  atoms: KnowledgeAtom[];
+  captureId: string;
+  pageId: string;
+  plan: CategoryPlan;
+  workspaceId: string;
+}) {
+  const client = createInsForgeClient(input.accessToken);
+
+  try {
+    const topicResult = await client.database
+      .from("topic_nodes")
+      .upsert({
+        workspace_id: input.workspaceId,
+        page_id: input.pageId,
+        name: input.plan.targetTitle,
+        slug: slugify(input.plan.targetTitle),
+        summary: input.plan.reason,
+        level: input.plan.targetLevel,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "workspace_id,slug" })
+      .select("id")
+      .single();
+
+    assertNoError("记录主题节点失败", topicResult.error);
+    const topicId = (topicResult.data as { id: string }).id;
+
+    const atomResult = await client.database
+      .from("knowledge_atoms")
+      .insert(input.atoms.map((atom) => ({
+        workspace_id: input.workspaceId,
+        capture_id: input.captureId,
+        topic_id: topicId,
+        atom_type: atom.type,
+        title: atom.title,
+        content: atom.content,
+        quote: atom.quote,
+        confidence: atom.confidence,
+        metadata_json: {},
+      })))
+      .select("id");
+
+    assertNoError("记录知识原子失败", atomResult.error);
+    const atomIds = ((atomResult.data ?? []) as Array<{ id: string }>).map((atom) => atom.id);
+
+    const planningResult = await client.database.from("category_planning_runs").insert({
+      workspace_id: input.workspaceId,
+      capture_id: input.captureId,
+      topic_id: topicId,
+      action: input.plan.action,
+      target_title: input.plan.targetTitle,
+      reason: input.plan.reason,
+      confidence: input.plan.confidence,
+      atom_ids_json: atomIds,
+      recommended_actions_json: {
+        action: input.plan.action,
+        targetLevel: input.plan.targetLevel,
+        targetPageId: input.plan.targetPageId,
+      },
+      status: "confirmed",
+    });
+
+    assertNoError("记录类目规划失败", planningResult.error);
+
+    const synthesisResult = await client.database.from("synthesis_runs").insert({
+      workspace_id: input.workspaceId,
+      topic_id: topicId,
+      page_id: input.pageId,
+      capture_id: input.captureId,
+      action: input.plan.action,
+      status: "confirmed",
+      diff_json: {
+        targetTitle: input.plan.targetTitle,
+        reason: input.plan.reason,
+        atomCount: input.atoms.length,
+      },
+      quality_notes_json: [],
+    });
+
+    assertNoError("记录综合运行失败", synthesisResult.error);
+  } catch (error) {
+    console.warn("V2 alpha graph tables are unavailable; skipped graph recording.", error);
+  }
 }
 
 async function ensureLibrary(libraryName: string, workspaceId: string, accessToken?: string): Promise<LibraryRef> {
@@ -291,6 +439,20 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 
   return slug || "page";
+}
+
+function actionLabel(action: string) {
+  const labels: Record<string, string> = {
+    update_existing_topic: "更新已有主题",
+    create_new_topic: "新建主题",
+    create_subtopic: "新建子主题",
+    merge_with_topic: "合并主题",
+    split_into_multiple_topics: "拆分主题",
+    append_as_evidence: "作为证据追加",
+    archive_as_source_only: "仅归档来源",
+    hold_for_more_sources: "暂存等待更多材料",
+  };
+  return labels[action] ?? action;
 }
 
 function buildDraftMarkdown(capture: CaptureDetailRow) {
