@@ -36,6 +36,7 @@
 - [13 技术架构设计](docs/13_technical_architecture.md)
 - [14 工程实施方案](docs/14_engineering_implementation_plan.md)
 - [15 服务器部署](docs/15_server_deployment.md)
+- [16 知识图谱 2.0 方案](docs/16_knowledge_graph_2_0.md)
 
 ## 产品 Demo
 
