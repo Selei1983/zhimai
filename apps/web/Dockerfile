@@ -17,6 +17,7 @@ ENV NEXT_PUBLIC_INSFORGE_ANON_KEY=$NEXT_PUBLIC_INSFORGE_ANON_KEY
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY apps/web ./
+RUN npm run db:generate
 RUN npm run build
 
 FROM node:22-alpine AS runner
