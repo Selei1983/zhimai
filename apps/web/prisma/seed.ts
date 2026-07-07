@@ -145,8 +145,9 @@ async function main() {
 
     const folderKey = `${page.library}/${page.folder}`;
     let folder = folderRecords.get(folderKey);
+    let folderId = folder?.id;
 
-    if (!folder) {
+    if (!folderId) {
       const createdFolder = await prisma.folder.upsert({
         where: { id: `folder-${folderKey}` },
         update: {},
@@ -157,7 +158,7 @@ async function main() {
         },
       });
       folderRecords.set(folderKey, createdFolder);
-      folder = createdFolder;
+      folderId = createdFolder.id;
     }
 
     await prisma.wikiPage.upsert({
@@ -176,7 +177,7 @@ async function main() {
       create: {
         workspaceId: workspace.id,
         libraryId: library.id,
-        folderId: folder.id,
+        folderId,
         title: page.title,
         slug: page.slug,
         type: page.type,
