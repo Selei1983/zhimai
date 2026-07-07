@@ -41,6 +41,10 @@
 
 - [知脉 Web Demo](demo/index.html)
 
+## 项目技能
+
+- [知脉服务器部署 Skill](skills/zhimai-server-deploy/SKILL.md)
+
 ## 开发启动
 
 Web 应用位于 `apps/web`。
