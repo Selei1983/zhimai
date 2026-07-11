@@ -187,6 +187,7 @@ function buildPlannerPrompt(input: AlphaPlanningInput) {
     "允许的 atom.type：concept, claim, method, case, data_point, question, definition, taxonomy, risk, decision。",
     "允许的 plan.action：update_existing_topic, create_new_topic, create_subtopic, merge_with_topic, split_into_multiple_topics, append_as_evidence, archive_as_source_only, hold_for_more_sources。",
     "如果新来源明显补充已有主题，优先 update_existing_topic。只有主题边界清晰且已有主题承载不了时，才 create_new_topic。",
+    "如果来源是未解析文件，只包含文件名、文件类型、文件大小、待解析等占位信息，不得因为这些通用文件元信息更新已有主题；除非文件标题几乎相同，否则应 create_new_topic 或 hold_for_more_sources。",
     "",
     `来源类型：${input.sourceType}`,
     `标题：${input.sourceTitle || "未命名来源"}`,
@@ -215,18 +216,22 @@ function normalizePlanning(payload: AiPlanningPayload, input: AlphaPlanningInput
   const fallbackAtoms = atoms.length ? atoms : buildHeuristicAtoms(input);
   const rawPlan = payload.plan ?? {};
   const targetPage = input.existingTopics.find((topic) => topic.id === rawPlan.targetPageId);
-  const action = planActions.has(rawPlan.action as CategoryPlan["action"])
+  const safeTargetPage = targetPage && isSafeUpdateTarget(input, targetPage) ? targetPage : undefined;
+  const rawAction = planActions.has(rawPlan.action as CategoryPlan["action"])
     ? (rawPlan.action as CategoryPlan["action"])
-    : targetPage
+    : safeTargetPage
       ? "update_existing_topic"
       : "create_new_topic";
+  const action = rawAction === "update_existing_topic" && !safeTargetPage ? "create_new_topic" : rawAction;
 
   return {
     atoms: fallbackAtoms,
     plan: {
       action,
-      targetTitle: cleanText(rawPlan.targetTitle, 80) || targetPage?.title || inferTitle(input),
-      targetPageId: targetPage?.id,
+      targetTitle: action === "update_existing_topic"
+        ? safeTargetPage?.title ?? cleanText(rawPlan.targetTitle, 80) ?? inferTitle(input)
+        : cleanText(rawPlan.targetTitle, 80) || inferTitle(input),
+      targetPageId: action === "update_existing_topic" ? safeTargetPage?.id : undefined,
       targetLevel: rawPlan.targetLevel === "subtopic" || rawPlan.targetLevel === "domain" || rawPlan.targetLevel === "aspect" ? rawPlan.targetLevel : "topic",
       reason: cleanText(rawPlan.reason, 400) || "系统根据来源主题和已有知识结构做出的类目规划。",
       confidence: clampConfidence(rawPlan.confidence),
@@ -237,7 +242,9 @@ function normalizePlanning(payload: AiPlanningPayload, input: AlphaPlanningInput
 function buildHeuristicPlanning(input: AlphaPlanningInput): GraphPlanningSummary {
   const atoms = buildHeuristicAtoms(input);
   const title = inferTitle(input);
-  const matchedTopic = findSimilarTopic(title, input.rawContent, input.existingTopics);
+  const matchedTopic = isUnparsedFilePlaceholder(input)
+    ? findSameTitleTopic(title, input.existingTopics)
+    : findSimilarTopic(title, input.rawContent, input.existingTopics);
 
   return {
     atoms,
@@ -255,6 +262,19 @@ function buildHeuristicPlanning(input: AlphaPlanningInput): GraphPlanningSummary
 }
 
 function buildHeuristicAtoms(input: AlphaPlanningInput): KnowledgeAtom[] {
+  if (isUnparsedFilePlaceholder(input)) {
+    const title = inferTitle(input);
+    return [
+      {
+        type: "question",
+        title: `待解析文件：${title}`,
+        content: `文件「${title}」已进入收集箱，但当前还没有抽取正文。需要完成文件解析后，再生成可沉淀的实质知识。`,
+        quote: cleanText(input.rawContent, 180),
+        confidence: 0.4,
+      },
+    ];
+  }
+
   const source = input.selectedText || input.rawContent;
   const sentences = source
     .split(/[。！？!?\n]+/)
@@ -274,21 +294,82 @@ function buildHeuristicAtoms(input: AlphaPlanningInput): KnowledgeAtom[] {
 
 function findSimilarTopic(title: string, rawContent: string, topics: ExistingTopicCandidate[]) {
   const terms = getTerms(`${title} ${rawContent}`).slice(0, 12);
+  const minScore = Math.max(3, Math.ceil(terms.length * 0.35));
   let best: { score: number; topic: ExistingTopicCandidate } | null = null;
 
   for (const topic of topics) {
-    const haystack = `${topic.title} ${topic.summary ?? ""} ${topic.content ?? ""}`.toLowerCase();
+    const haystack = normalizeForTerms(`${topic.title} ${topic.summary ?? ""} ${topic.content ?? ""}`);
     const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
     if (!best || score > best.score) {
       best = { score, topic };
     }
   }
 
-  return best && best.score >= Math.min(3, terms.length) ? best.topic : null;
+  return best && best.score >= minScore ? best.topic : null;
+}
+
+function findSameTitleTopic(title: string, topics: ExistingTopicCandidate[]) {
+  const normalizedTitle = normalizeTitle(title);
+  return topics.find((topic) => normalizeTitle(topic.title) === normalizedTitle) ?? null;
+}
+
+function isSafeUpdateTarget(input: AlphaPlanningInput, topic: ExistingTopicCandidate) {
+  if (isUnparsedFilePlaceholder(input)) {
+    return normalizeTitle(inferTitle(input)) === normalizeTitle(topic.title);
+  }
+
+  return true;
 }
 
 function getTerms(value: string) {
-  return Array.from(new Set(value.toLowerCase().match(/[\p{Letter}\p{Number}]{2,}/gu) ?? []));
+  return Array.from(new Set(normalizeForTerms(value).match(/[\p{Letter}\p{Number}]{2,}/gu) ?? []))
+    .filter((term) => !stopTerms.has(term))
+    .filter((term) => term.length >= 2);
+}
+
+const stopTerms = new Set([
+  "application",
+  "pdf",
+  "未知",
+  "文件",
+  "文件名",
+  "文件类型",
+  "文件大小",
+  "待解析",
+  "来源",
+  "内容",
+  "正文",
+  "章节",
+  "表格",
+  "图片",
+  "记录",
+  "上传",
+  "后续",
+]);
+
+function normalizeForTerms(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/这个文件已记录为上传来源/g, " ")
+    .replace(/后续接入文件存储与解析服务后/g, " ")
+    .replace(/会抽取正文、章节、表格或图片内容/g, " ")
+    .replace(/\.(pdf|docx?|pptx?|xlsx?|txt|md)\b/g, " ");
+}
+
+function normalizeTitle(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\.(pdf|docx?|pptx?|xlsx?|txt|md)\b/g, "")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "")
+    .trim();
+}
+
+function isUnparsedFilePlaceholder(input: AlphaPlanningInput) {
+  return (
+    input.sourceType === "file" &&
+    input.rawContent.includes("## 待解析") &&
+    input.rawContent.includes("这个文件已记录为上传来源")
+  );
 }
 
 function inferTitle(input: AlphaPlanningInput) {
