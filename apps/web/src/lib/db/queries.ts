@@ -6,10 +6,12 @@ import { getUserWorkspaceContext } from "@/lib/insforge/workspace";
 import {
   fallbackAiConfig,
   fallbackCaptures,
+  fallbackGraphOverview,
   fallbackLibraries,
   fallbackWikiPages,
   type AiProviderConfig,
   type Capture,
+  type GraphOverview,
   type LibraryTree,
   type WikiPage,
 } from "@/lib/zhimai-data";
@@ -19,6 +21,7 @@ export type ZhimaiInitialData = {
   captures: Capture[];
   libraries: LibraryTree[];
   aiConfig: AiProviderConfig | null;
+  graph: GraphOverview;
 };
 
 export async function getZhimaiInitialData(accessToken?: string): Promise<ZhimaiInitialData> {
@@ -29,6 +32,7 @@ export async function getZhimaiInitialData(accessToken?: string): Promise<Zhimai
         wikiPages: [],
         captures: [],
         aiConfig: fallbackAiConfig,
+        graph: fallbackGraphOverview,
       };
     }
 
@@ -42,7 +46,7 @@ export async function getZhimaiInitialData(accessToken?: string): Promise<Zhimai
   }
 
   try {
-    const [libraries, pages, captures] = await Promise.all([
+    const [libraries, pages, captures, topics, atoms, planningRuns] = await Promise.all([
       prisma.library.findMany({
         where: { workspaceId },
         include: {
@@ -63,6 +67,24 @@ export async function getZhimaiInitialData(accessToken?: string): Promise<Zhimai
       prisma.capture.findMany({
         where: { workspaceId },
         orderBy: { createdAt: "desc" },
+      }),
+      prisma.topicNode.findMany({
+        where: { workspaceId },
+        orderBy: { updatedAt: "desc" },
+        include: {
+          _count: {
+            select: { atoms: true },
+          },
+        },
+      }),
+      prisma.knowledgeAtom.findMany({
+        where: { workspaceId },
+        select: { id: true },
+      }),
+      prisma.categoryPlanningRun.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: "desc" },
+        take: 8,
       }),
     ]);
 
@@ -92,6 +114,29 @@ export async function getZhimaiInitialData(accessToken?: string): Promise<Zhimai
         suggestedAction: capture.status === "pending" ? pendingAction(normalizeSourceType(capture.sourceType)) : "确认写入",
       })),
       aiConfig: fallbackAiConfig,
+      graph: {
+        topics: topics.map((topic) => ({
+          id: topic.id,
+          name: topic.name,
+          level: topic.level,
+          status: topic.status,
+          summary: topic.summary ?? "暂无摘要",
+          pageId: topic.pageId ?? undefined,
+          atomCount: topic._count.atoms,
+          updatedAt: formatDate(topic.updatedAt),
+        })),
+        recentPlanningRuns: planningRuns.map((run) => ({
+          id: run.id,
+          action: run.action,
+          targetTitle: run.targetTitle,
+          reason: run.reason,
+          confidence: run.confidence ?? undefined,
+          atomCount: Array.isArray(run.atomIdsJson) ? run.atomIdsJson.length : 0,
+          status: run.status,
+          createdAt: formatDate(run.createdAt),
+        })),
+        atomCount: atoms.length,
+      },
     };
   } catch (error) {
     console.error("Failed to load database data, falling back to fixtures.", error);
@@ -100,6 +145,7 @@ export async function getZhimaiInitialData(accessToken?: string): Promise<Zhimai
       wikiPages: fallbackWikiPages,
       captures: fallbackCaptures,
       aiConfig: fallbackAiConfig,
+      graph: fallbackGraphOverview,
     };
   }
 }

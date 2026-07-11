@@ -11,7 +11,17 @@ import {
 } from "@/app/actions";
 import { defaultGenerationPrompt } from "@/lib/ai/defaults";
 import { sourceTypeOptions } from "@/lib/captures/source-types";
-import type { AiProviderConfig, AppUser, Capture, KnowledgeSourceType, LibraryTree, WikiPage } from "@/lib/zhimai-data";
+import type {
+  AiProviderConfig,
+  AppUser,
+  Capture,
+  GraphOverview,
+  KnowledgeSourceType,
+  LibraryTree,
+  PlanningRunSummary,
+  TopicNodeSummary,
+  WikiPage,
+} from "@/lib/zhimai-data";
 
 type View = "workspace" | "inbox" | "wiki" | "graph" | "extension" | "settings" | "profile";
 
@@ -21,6 +31,7 @@ type ZhimaiAppProps = {
   initialData: {
     wikiPages: WikiPage[];
     captures: Capture[];
+    graph: GraphOverview;
     libraries: LibraryTree[];
     aiConfig: AiProviderConfig | null;
   };
@@ -60,6 +71,7 @@ const viewCopy: Record<View, { title: string; subtitle: string }> = {
 
 export function ZhimaiApp({ accessToken, currentUser, initialData, onSignOut }: ZhimaiAppProps) {
   const [captures, setCaptures] = useState(initialData.captures);
+  const [graph, setGraph] = useState(initialData.graph);
   const [libraries, setLibraries] = useState(initialData.libraries);
   const [wikiPages, setWikiPages] = useState(initialData.wikiPages);
   const [aiConfig, setAiConfig] = useState(initialData.aiConfig);
@@ -81,6 +93,11 @@ export function ZhimaiApp({ accessToken, currentUser, initialData, onSignOut }: 
 
   const selectPage = (page: WikiPage) => {
     setActivePageId(page.id);
+    setActiveView("wiki");
+  };
+
+  const setActivePageIdAndOpen = (pageId: string) => {
+    setActivePageId(pageId);
     setActiveView("wiki");
   };
 
@@ -174,7 +191,11 @@ export function ZhimaiApp({ accessToken, currentUser, initialData, onSignOut }: 
       setCaptures((current) =>
         current.map((capture) => (capture.id === result.capture.id ? result.capture : capture)),
       );
-      setWikiPages((current) => [result.page, ...current]);
+      setWikiPages((current) => upsertWikiPage(current, result.page));
+      const graphUpdate = result.graph;
+      if (graphUpdate) {
+        setGraph((current) => mergeGraphOverview(current, graphUpdate));
+      }
       setOpenFolders((current) => ({
         ...current,
         [result.page.library]: true,
@@ -182,7 +203,13 @@ export function ZhimaiApp({ accessToken, currentUser, initialData, onSignOut }: 
       }));
       setActivePageId(result.page.id);
       setActiveView("wiki");
-    }, "已写入 Wiki");
+      setNotice({
+        tone: "success",
+        message: result.graph
+          ? `已规划写入「${result.graph.planningRun.targetTitle}」：${actionLabel(result.graph.planningRun.action)}`
+          : "已规划写入 Wiki",
+      });
+    });
   };
 
   const handleSaveAiConfig = (input: {
@@ -384,7 +411,7 @@ export function ZhimaiApp({ accessToken, currentUser, initialData, onSignOut }: 
           ) : (
             <EmptyWikiView onCreate={handleCreatePage} />
           ))}
-        {activeView === "graph" && <PlaceholderView title="脉图" description="这里后续展示页面关系、主题簇和孤立知识。" />}
+        {activeView === "graph" && <GraphView graph={graph} onOpenPage={setActivePageIdAndOpen} wikiPages={wikiPages} />}
         {activeView === "extension" && <ExtensionView />}
         {activeView === "settings" && (
           <AiSettingsView
@@ -419,6 +446,50 @@ function Notice({ children, tone }: { children: React.ReactNode; tone: "success"
       {children}
     </div>
   );
+}
+
+function upsertWikiPage(pages: WikiPage[], page: WikiPage) {
+  const exists = pages.some((item) => item.id === page.id);
+  if (!exists) return [page, ...pages];
+  return pages.map((item) => (item.id === page.id ? page : item));
+}
+
+function mergeGraphOverview(
+  current: GraphOverview,
+  update: { planningRun: PlanningRunSummary; topic: TopicNodeSummary },
+): GraphOverview {
+  const existingTopic = current.topics.find((topic) => topic.id === update.topic.id);
+  const topics = existingTopic
+    ? current.topics.map((topic) =>
+        topic.id === update.topic.id
+          ? {
+              ...topic,
+              ...update.topic,
+              atomCount: topic.atomCount + update.topic.atomCount,
+            }
+          : topic,
+      )
+    : [update.topic, ...current.topics];
+
+  return {
+    atomCount: current.atomCount + update.topic.atomCount,
+    recentPlanningRuns: [update.planningRun, ...current.recentPlanningRuns].slice(0, 8),
+    topics,
+  };
+}
+
+function actionLabel(action: string) {
+  const labels: Record<string, string> = {
+    update_existing_topic: "更新已有主题",
+    create_new_topic: "新建主题",
+    create_subtopic: "创建子主题",
+    merge_with_topic: "合并主题",
+    split_into_multiple_topics: "拆分主题",
+    append_as_evidence: "补充为证据",
+    archive_as_source_only: "仅归档来源",
+    hold_for_more_sources: "等待更多材料",
+  };
+  return labels[action] ?? "完成规划";
 }
 
 function SidebarNavItem({
@@ -872,6 +943,128 @@ function EmptyWikiView({ onCreate }: { onCreate: () => void }) {
       </button>
     </section>
   );
+}
+
+function GraphView({
+  graph,
+  onOpenPage,
+  wikiPages,
+}: {
+  graph: GraphOverview;
+  onOpenPage: (pageId: string) => void;
+  wikiPages: WikiPage[];
+}) {
+  const linkedTopicCount = graph.topics.filter((topic) => topic.pageId).length;
+  const latestRuns = graph.recentPlanningRuns;
+
+  return (
+    <div className="grid max-w-6xl gap-4">
+      <section className="grid gap-3 md:grid-cols-3">
+        <MetricBlock label="主题节点" value={graph.topics.length} />
+        <MetricBlock label="知识原子" value={graph.atomCount} />
+        <MetricBlock label="已关联页面" value={linkedTopicCount} />
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <div className="rounded-lg border border-[#e5e8e6] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold">主题结构</h2>
+            <span className="text-[12px] text-[#747a76]">按最近更新排序</span>
+          </div>
+          <div className="grid gap-2">
+            {graph.topics.map((topic) => {
+              const page = topic.pageId ? wikiPages.find((item) => item.id === topic.pageId) : undefined;
+              return (
+                <div
+                  key={topic.id}
+                  className="grid gap-2 rounded-lg border border-[#e5e8e6] px-3 py-3 md:grid-cols-[minmax(0,1fr)_120px_92px]"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <strong className="truncate text-[14px]">{topic.name}</strong>
+                      <span className="rounded-md bg-[#f1f3f2] px-1.5 py-0.5 text-[11px] text-[#747a76]">
+                        {levelLabel(topic.level)}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-[#747a76]">{topic.summary}</p>
+                    <div className="mt-2 text-[12px] text-[#8a908c]">
+                      {topic.atomCount} 个知识原子 · {topic.updatedAt}
+                    </div>
+                  </div>
+                  <div className="text-[12px] text-[#747a76]">
+                    <div className="font-medium text-[#555a54]">页面</div>
+                    <div className="mt-1 truncate">{page?.title ?? "未关联"}</div>
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <button
+                      className="h-8 rounded-lg border border-[#e5e8e6] bg-white px-3 text-[12px] font-medium disabled:opacity-45"
+                      disabled={!topic.pageId}
+                      onClick={() => topic.pageId && onOpenPage(topic.pageId)}
+                    >
+                      打开
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {graph.topics.length === 0 && (
+              <div className="rounded-lg border border-dashed border-[#dfe3e1] p-6 text-center text-[13px] text-[#747a76]">
+                还没有主题节点。先在收集箱点击“规划写入”，这里会出现类目与主题沉淀。
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-[#e5e8e6] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold">最近规划</h2>
+            <span className="text-[12px] text-[#747a76]">{latestRuns.length} 条</span>
+          </div>
+          <div className="grid gap-2">
+            {latestRuns.map((run) => (
+              <div key={run.id} className="rounded-lg border border-[#e5e8e6] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <strong className="text-[13px]">{run.targetTitle}</strong>
+                  <span className="shrink-0 rounded-md bg-[#f1f3f2] px-1.5 py-0.5 text-[11px] text-[#747a76]">
+                    {actionLabel(run.action)}
+                  </span>
+                </div>
+                <p className="mt-2 text-[12px] leading-5 text-[#747a76]">{run.reason}</p>
+                <div className="mt-2 flex justify-between text-[12px] text-[#8a908c]">
+                  <span>{run.atomCount} 个原子</span>
+                  <span>{run.createdAt}</span>
+                </div>
+              </div>
+            ))}
+            {latestRuns.length === 0 && (
+              <div className="rounded-lg border border-dashed border-[#dfe3e1] p-6 text-center text-[13px] text-[#747a76]">
+                暂无规划记录
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricBlock({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-[#e5e8e6] bg-white p-4">
+      <div className="text-[12px] text-[#747a76]">{label}</div>
+      <div className="mt-2 text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function levelLabel(level: string) {
+  const labels: Record<string, string> = {
+    aspect: "切面",
+    domain: "领域",
+    subtopic: "子主题",
+    topic: "主题",
+  };
+  return labels[level] ?? level;
 }
 
 function ExtensionView() {

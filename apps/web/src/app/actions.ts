@@ -13,7 +13,7 @@ import {
 } from "@/lib/insforge/actions";
 import { getUserWorkspaceContext } from "@/lib/insforge/workspace";
 import { buildTopicMarkdown, generateAlphaPlanning } from "@/lib/knowledge-graph/alpha";
-import type { Capture, KnowledgeSourceType, WikiPage } from "@/lib/zhimai-data";
+import type { Capture, KnowledgeSourceType, PlanningRunSummary, TopicNodeSummary, WikiPage } from "@/lib/zhimai-data";
 
 export async function saveAiConfig(input: AiProviderInput, accessToken?: string) {
   if (!shouldUseInsForge()) {
@@ -398,6 +398,28 @@ export async function createWikiPageFromCapture(input: { captureId: string }, ac
 
   return {
     capture: toCapture(updatedCapture),
+    graph: {
+      planningRun: {
+        id: `${capture.id}-${Date.now()}`,
+        action: planning.plan.action,
+        targetTitle: planning.plan.targetTitle,
+        reason: planning.plan.reason,
+        confidence: planning.plan.confidence,
+        atomCount: planning.atoms.length,
+        status: "confirmed",
+        createdAt: formatDate(new Date()),
+      } satisfies PlanningRunSummary,
+      topic: {
+        id: topic.id,
+        name: planning.plan.targetTitle,
+        level: planning.plan.targetLevel,
+        status: "active",
+        summary: planning.plan.reason,
+        pageId: page.id,
+        atomCount: planning.atoms.length,
+        updatedAt: formatDate(new Date()),
+      } satisfies TopicNodeSummary,
+    },
     page: toWikiPage(page),
   };
 }

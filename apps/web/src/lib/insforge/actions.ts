@@ -1,6 +1,7 @@
 import { createInsForgeClient } from "@/lib/insforge/client";
 import { normalizeSourceType, parserLabel } from "@/lib/captures/source-types";
 import {
+  formatDate,
   getInsForgeErrorMessage,
   type InsForgeCaptureRow,
   type InsForgePageRow,
@@ -8,7 +9,7 @@ import {
   toWikiPage,
 } from "@/lib/insforge/mappers";
 import { buildTopicMarkdown, generateAlphaPlanning, type ExistingTopicCandidate } from "@/lib/knowledge-graph/alpha";
-import type { CategoryPlan, KnowledgeAtom } from "@/lib/zhimai-data";
+import type { CategoryPlan, KnowledgeAtom, PlanningRunSummary, TopicNodeSummary } from "@/lib/zhimai-data";
 
 const pageSelect = "id,title,type,status,updated_at,content_markdown,libraries(name),folders(name)";
 
@@ -226,7 +227,7 @@ export async function createInsForgeWikiPageFromCapture(
   });
   assertNoError("保存主题页版本失败", versionResult.error);
 
-  await recordAlphaGraph({
+  const graphWrite = await recordAlphaGraph({
     accessToken,
     atoms: planning.atoms,
     captureId: capture.id,
@@ -250,6 +251,7 @@ export async function createInsForgeWikiPageFromCapture(
 
   return {
     capture: toCapture(updateCaptureResult.data as InsForgeCaptureRow),
+    graph: graphWrite,
     page: toWikiPage(page),
   };
 }
@@ -279,7 +281,7 @@ async function recordAlphaGraph(input: {
   pageId: string;
   plan: CategoryPlan;
   workspaceId: string;
-}) {
+}): Promise<{ planningRun: PlanningRunSummary; topic: TopicNodeSummary } | null> {
   const client = createInsForgeClient(input.accessToken);
 
   try {
@@ -353,8 +355,32 @@ async function recordAlphaGraph(input: {
     });
 
     assertNoError("记录综合运行失败", synthesisResult.error);
+
+    return {
+      planningRun: {
+        id: `${input.captureId}-${Date.now()}`,
+        action: input.plan.action,
+        targetTitle: input.plan.targetTitle,
+        reason: input.plan.reason,
+        confidence: input.plan.confidence,
+        atomCount: input.atoms.length,
+        status: "confirmed",
+        createdAt: formatDate(new Date().toISOString()),
+      },
+      topic: {
+        id: topicId,
+        name: input.plan.targetTitle,
+        level: input.plan.targetLevel,
+        status: "active",
+        summary: input.plan.reason,
+        pageId: input.pageId,
+        atomCount: input.atoms.length,
+        updatedAt: formatDate(new Date().toISOString()),
+      },
+    };
   } catch (error) {
     console.warn("V2 alpha graph tables are unavailable; skipped graph recording.", error);
+    return null;
   }
 }
 

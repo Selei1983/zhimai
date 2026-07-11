@@ -57,6 +57,34 @@ export type GraphPlanningSummary = {
   plan: CategoryPlan;
 };
 
+export type TopicNodeSummary = {
+  id: string;
+  name: string;
+  level: string;
+  status: string;
+  summary: string;
+  pageId?: string;
+  atomCount: number;
+  updatedAt: string;
+};
+
+export type PlanningRunSummary = {
+  id: string;
+  action: CategoryPlan["action"] | string;
+  targetTitle: string;
+  reason: string;
+  confidence?: number;
+  atomCount: number;
+  status: string;
+  createdAt: string;
+};
+
+export type GraphOverview = {
+  topics: TopicNodeSummary[];
+  recentPlanningRuns: PlanningRunSummary[];
+  atomCount: number;
+};
+
 export type KnowledgeSourceType = "text" | "web" | "video" | "file";
 
 export type AppUser = {
@@ -215,3 +243,9 @@ export const fallbackLibraries: LibraryTree[] = [
 ];
 
 export const fallbackAiConfig: AiProviderConfig | null = null;
+
+export const fallbackGraphOverview: GraphOverview = {
+  topics: [],
+  recentPlanningRuns: [],
+  atomCount: 0,
+};

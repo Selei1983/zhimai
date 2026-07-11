@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { ZhimaiApp } from "@/components/zhimai-app";
 import { createInsForgeBrowserClient } from "@/lib/insforge/browser-client";
-import type { AppUser, AiProviderConfig, Capture, LibraryTree, WikiPage } from "@/lib/zhimai-data";
+import type { AppUser, AiProviderConfig, Capture, GraphOverview, LibraryTree, WikiPage } from "@/lib/zhimai-data";
 
 type InitialData = {
   wikiPages: WikiPage[];
   captures: Capture[];
+  graph: GraphOverview;
   libraries: LibraryTree[];
   aiConfig: AiProviderConfig | null;
 };
