@@ -108,6 +108,17 @@ async function callPlannerModel(
   input: AlphaPlanningInput,
   config: NonNullable<Awaited<ReturnType<typeof getAiProviderRuntimeConfig>>>,
 ) {
+  const sourceMarkdown = prepareSourceMarkdown(input);
+  const chunks = splitMarkdown(sourceMarkdown, 10_000);
+
+  if (chunks.length > 1) {
+    const chunkResults = await Promise.all(
+      chunks.map((chunk, index) => callChunkAnalyzer(chunk, index, chunks.length, input, config)),
+    );
+    const atoms = chunkResults.flatMap((result) => result.atoms ?? []).slice(0, 36);
+    return callSynthesisPlanner(input, atoms, config);
+  }
+
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -124,7 +135,7 @@ async function callPlannerModel(
         },
         {
           role: "user",
-          content: buildPlannerPrompt(input),
+          content: buildPlannerPrompt(input, sourceMarkdown),
         },
       ],
       temperature: 0.1,
@@ -147,8 +158,87 @@ async function callPlannerModel(
   return normalizePlanning(JSON.parse(content) as AiPlanningPayload, input);
 }
 
-function buildPlannerPrompt(input: AlphaPlanningInput) {
-  const sourceText = input.selectedText || input.rawContent;
+async function callChunkAnalyzer(
+  chunk: string,
+  index: number,
+  total: number,
+  input: AlphaPlanningInput,
+  config: NonNullable<Awaited<ReturnType<typeof getAiProviderRuntimeConfig>>>,
+): Promise<AiPlanningPayload> {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        {
+          role: "system",
+          content: "你是知脉的知识分析师。请从文档分块中提取真正有信息量、可独立理解的知识原子。忽略文件名、格式、页码和目录等元信息。只输出 JSON。",
+        },
+        {
+          role: "user",
+          content: [
+            `文档：${input.sourceTitle || "未命名来源"}`,
+            `这是第 ${index + 1}/${total} 个分块。`,
+            "输出 JSON：{\"atoms\":[{\"type\":\"claim\",\"title\":\"短标题\",\"content\":\"完整解释，包含背景、结论与必要细节\",\"quote\":\"原文依据\",\"confidence\":0.8}]}。",
+            "每块提取 3-6 个最重要知识点；content 不得复述标题，不得提取文件元信息。",
+            "文档分块：",
+            chunk,
+          ].join("\n\n"),
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 2200,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) throw new Error(`AI 分块分析失败：${response.status}`);
+  const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = payload.choices?.[0]?.message?.content;
+  return content ? (JSON.parse(content) as AiPlanningPayload) : {};
+}
+
+async function callSynthesisPlanner(
+  input: AlphaPlanningInput,
+  atoms: Array<Partial<KnowledgeAtom>>,
+  config: NonNullable<Awaited<ReturnType<typeof getAiProviderRuntimeConfig>>>,
+) {
+  const synthesisInput = {
+    ...input,
+    rawContent: [
+      `# ${input.sourceTitle || "未命名来源"}`,
+      "",
+      "## 分块分析结果",
+      JSON.stringify(atoms, null, 2),
+    ].join("\n"),
+    selectedText: null,
+  };
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        {
+          role: "system",
+          content: "你是知脉的知识架构师。请合并重复观点、保留不同维度，形成一组有层次的知识原子，并完成新建或更新主题判断。只输出 JSON。",
+        },
+        { role: "user", content: buildPlannerPrompt(synthesisInput, synthesisInput.rawContent) },
+      ],
+      temperature: 0.1,
+      max_tokens: 3200,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) throw new Error(`AI 汇总分析失败：${response.status}`);
+  const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = payload.choices?.[0]?.message?.content;
+  return content ? normalizePlanning(JSON.parse(content) as AiPlanningPayload, input) : null;
+}
+
+function buildPlannerPrompt(input: AlphaPlanningInput, sourceText = prepareSourceMarkdown(input)) {
   const candidates = input.existingTopics.slice(0, 12).map((topic) => ({
     id: topic.id,
     title: topic.title,
@@ -195,10 +285,46 @@ function buildPlannerPrompt(input: AlphaPlanningInput) {
     "候选已有主题：",
     JSON.stringify(candidates, null, 2),
     "新来源内容：",
-    sourceText.slice(0, 12000),
+    sourceText.slice(0, 24_000),
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function prepareSourceMarkdown(input: AlphaPlanningInput) {
+  const source = input.selectedText || input.rawContent;
+  if (input.sourceType !== "file" || !source.includes("# PDF 正文")) return source;
+
+  const body = source.split("# PDF 正文").slice(1).join("# PDF 正文").trim();
+  return [`# ${input.sourceTitle || "PDF 文档"}`, "", body]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function splitMarkdown(markdown: string, maxLength: number) {
+  if (markdown.length <= maxLength) return [markdown];
+  const sections = markdown.split(/(?=^## 第 \d+ 页)/gm).filter(Boolean);
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const section of sections.length > 1 ? sections : markdown.split(/\n\n+/)) {
+    if (current && current.length + section.length > maxLength) {
+      chunks.push(current.trim());
+      current = "";
+    }
+    if (section.length > maxLength) {
+      if (current) chunks.push(current.trim());
+      for (let offset = 0; offset < section.length; offset += maxLength) {
+        chunks.push(section.slice(offset, offset + maxLength).trim());
+      }
+      current = "";
+      continue;
+    }
+    current += `${current ? "\n\n" : ""}${section}`;
+  }
+
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
 }
 
 function normalizePlanning(payload: AiPlanningPayload, input: AlphaPlanningInput): GraphPlanningSummary {
@@ -275,7 +401,7 @@ function buildHeuristicAtoms(input: AlphaPlanningInput): KnowledgeAtom[] {
     ];
   }
 
-  const source = input.selectedText || input.rawContent;
+  const source = prepareSourceMarkdown(input);
   const sentences = source
     .split(/[。！？!?\n]+/)
     .map((item) => item.trim())
