@@ -11,6 +11,7 @@ import {
 } from "@/app/actions";
 import { defaultGenerationPrompt } from "@/lib/ai/defaults";
 import { sourceTypeOptions } from "@/lib/captures/source-types";
+import { parsePdfFile } from "@/lib/captures/pdf-parser";
 import type {
   AiProviderConfig,
   AppUser,
@@ -615,6 +616,7 @@ function WorkspaceView({
   const [sourceTitle, setSourceTitle] = useState<string | undefined>();
   const [sourceType, setSourceType] = useState<KnowledgeSourceType>("text");
   const [fileError, setFileError] = useState("");
+  const [isParsingFile, setIsParsingFile] = useState(false);
   const [fileName, setFileName] = useState("");
   const selectedSource = sourceTypeOptions.find((option) => option.value === sourceType) ?? sourceTypeOptions[0];
 
@@ -632,6 +634,7 @@ function WorkspaceView({
     setFileName("");
     setSourceTitle(undefined);
     setRawContent("");
+    setIsParsingFile(false);
 
     if (!file) return;
 
@@ -645,6 +648,32 @@ function WorkspaceView({
     ];
 
     try {
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        setIsParsingFile(true);
+        const result = await parsePdfFile(file);
+
+        if (!result.content) {
+          setRawContent("");
+          setFileError(`未能从这份 PDF 提取文字。它可能是扫描版（共 ${result.pageCount} 页），需要 OCR 后才能整理成知识。`);
+          return;
+        }
+
+        setRawContent(
+          [
+            ...metadata,
+            `解析状态：已提取 ${result.extractedPageCount}/${result.pageCount} 页`,
+            "",
+            "# PDF 正文",
+            "",
+            result.content,
+          ].join("\n"),
+        );
+        if (result.truncated) {
+          setFileError("PDF 内容较长，当前先提取前 80000 字用于知识整理。");
+        }
+        return;
+      }
+
       if (isTextLikeFile(file)) {
         const text = await file.text();
         setRawContent([...metadata, "", "## 文件内容", text.slice(0, 8000)].join("\n"));
@@ -663,7 +692,10 @@ function WorkspaceView({
         ].join("\n"),
       );
     } catch {
-      setFileError("读取文件失败，请换一个文件再试。");
+      setRawContent("");
+      setFileError("PDF 解析失败，文件可能已加密、损坏或格式暂不支持。");
+    } finally {
+      setIsParsingFile(false);
     }
   };
 
@@ -697,8 +729,8 @@ function WorkspaceView({
         {sourceType === "file" ? (
           <div className="rounded-lg border border-dashed border-[#cfd6d2] bg-[#fafbfa] p-4">
             <label className="grid cursor-pointer place-items-center gap-2 rounded-lg bg-white px-4 py-6 text-center text-[13px] hover:bg-[#f5f6f5]">
-              <span className="font-semibold text-[#202322]">{fileName || "上传文件"}</span>
-              <span className="text-[#747a76]">支持文本类文件直接读取；PDF、Word、图片会先记录文件信息。</span>
+              <span className="font-semibold text-[#202322]">{isParsingFile ? "正在读取 PDF..." : fileName || "上传文件"}</span>
+              <span className="text-[#747a76]">支持 PDF 和文本文件；扫描版 PDF、Word 与图片将在后续接入 OCR。</span>
               <input
                 className="hidden"
                 onChange={(event) => void handleFileChange(event.target.files?.[0])}
@@ -725,7 +757,7 @@ function WorkspaceView({
         {fileError && <div className="mt-2 text-[12px] text-[#9b6b1f]">{fileError}</div>}
         <button
           className="mt-3 h-9 rounded-lg bg-[#16846f] px-4 font-semibold text-white disabled:opacity-60"
-          disabled={isSaving || !rawContent.trim()}
+          disabled={isSaving || isParsingFile || !rawContent.trim()}
           onClick={handleSubmit}
         >
           {isSaving ? "保存中" : "保存到收集箱"}
